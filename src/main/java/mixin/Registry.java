@@ -1,5 +1,6 @@
 package mixin;
 
+import example.mixins.EntityMixin;
 import mixin.chatgpt_code.MethodMerger;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Opcodes;
@@ -18,8 +19,7 @@ public class Registry {
 
     static {
         // Register all mixin classes here
-
-
+        mixin_classes.add(EntityMixin.class);
     }
 
     private static List<Method> getMethodsAnnotatedWith(final Class<?> type, final Class<? extends Annotation> annotation) {
@@ -29,8 +29,6 @@ public class Registry {
             // iterate though the list of methods declared in the class represented by klass variable, and add those annotated with the specified annotation
             for (final Method method : klass.getDeclaredMethods()) {
                 if (method.isAnnotationPresent(annotation)) {
-                    Annotation annotInstance = method.getAnnotation(annotation);
-                    // TODO process annotInstance
                     methods.add(method);
                 }
             }
@@ -40,26 +38,30 @@ public class Registry {
         return methods;
     }
 
+    // FIXME: 12/06/2023 What doesn't work: methods with arguments, everything
     public static void mixin() throws Exception {
         for(Class<?> c : mixin_classes){
             List<Method> annotatedMethods = getMethodsAnnotatedWith(c, Injectable.class);
             for(Method sourceMethod : annotatedMethods){
                 Injectable annMethod = sourceMethod.getAnnotation(Injectable.class);
+                System.out.println("Annotated target method: "+annMethod.targetMethod()+", target class: "+c.getAnnotation(Mixin.class).targetClass().toString());
                 Method targetMethod = c.getAnnotation(Mixin.class).targetClass().getMethod(annMethod.targetMethod());
 
                 try {
                     MethodNode sourceMethodNode = loadMethod(c.getName(), sourceMethod.getName());
-                    MethodNode targetMethodNode = loadMethod(targetMethod.getClass().getName(), targetMethod.getName());
+                    MethodNode targetMethodNode = loadMethod(c.getAnnotation(Mixin.class).targetClass().getName(), targetMethod.getName());
                     MethodMerger.mixin(
                             targetMethodNode,
                             sourceMethodNode,
                             getMethodDescriptor(targetMethod),
                             getAccessLevel(targetMethod),
-                            annMethod.position()
+                            annMethod.position(),
+                            c.getAnnotation(Mixin.class).targetClass(),
+                            targetMethod
                     );
                 } catch (Exception e){
                     Logger.getLogger("Mixin").warning("Ignoring "+c.getName()+"::"+sourceMethod.getName()+". Reason: loadMethod(classname, methodname) threw an exception." );
-
+                    e.printStackTrace();
                 }
             }
         }
@@ -76,7 +78,7 @@ public class Registry {
             }
         }
 
-        throw new IllegalArgumentException("Method not found: " + methodName);
+        throw new IllegalArgumentException("Method not found: " +className+"::"+ methodName);
     }
 
     private static String getMethodDescriptor(Method method){
